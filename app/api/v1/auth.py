@@ -29,6 +29,7 @@ async def register(
 @router.post("/login", response_model=SuccessResponse[UserInDB])
 @limiter.limit("5/minute")
 async def login(
+    request: Request,
     login_in: LoginRequest,
     response: Response,
     db: AsyncSession = Depends(deps.get_db)
