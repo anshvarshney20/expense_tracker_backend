@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class AIAnalysisResponse(BaseModel):
     summary: str
+    savings_tip: str
     suggestions: list[dict[str, Any]]
     discipline_score: int
     savings_rate: float
@@ -31,6 +32,7 @@ class AIService:
             # Mock response if no API key
             return AIAnalysisResponse(
                 summary="AI Analysis is currently disabled (API Key missing).",
+                savings_tip="Enable neural link (API Key) for predictive financial modeling.",
                 suggestions=[{"category": "General", "reduction": 0, "reason": "Add API Key"}],
                 discipline_score=0,
                 savings_rate=0.0,
@@ -45,6 +47,7 @@ class AIService:
         
         Return JSON with fields:
         - summary: A human-readable summary of spending habits.
+        - savings_tip: A single, punchy, high-impact sentence of advice.
         - suggestions: A list of 3 JSON objects with keys: category, reduction (float), reason.
         - discipline_score: A value from 0-100 reflecting budget adherence.
         - savings_rate: A float from 0-1 representing savings vs spending.
