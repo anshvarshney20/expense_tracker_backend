@@ -1,14 +1,12 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Sequence
-from sqlalchemy import select, func, and_, String, or_
-from sqlalchemy.ext.asyncio import AsyncSession
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.models.expense import Expense
 from app.repositories.base import BaseRepository
 
-
 class ExpenseRepository(BaseRepository[Expense]):
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncIOMotorDatabase):
         super().__init__(Expense, db)
 
     async def get_multi_by_user(
@@ -21,106 +19,93 @@ class ExpenseRepository(BaseRepository[Expense]):
         skip: int = 0,
         limit: int = 100,
     ) -> Sequence[Expense]:
-        query = select(Expense).where(Expense.user_id == user_id)
+        query = {"user_id": str(user_id)}
         
         if category:
-            query = query.where(Expense.category == category)
-        if start_date:
-            query = query.where(Expense.date >= start_date)
-        if end_date:
-            query = query.where(Expense.date <= end_date)
+            query["category"] = category
             
-        query = query.order_by(Expense.date.desc()).offset(skip).limit(limit)
-        result = await self.db.execute(query)
-        return result.scalars().all()
+        date_filter = {}
+        if start_date:
+            # MongoDB handles dates, but pydantic/motor might need conversion
+            date_filter["$gte"] = datetime.combine(start_date, datetime.min.time())
+        if end_date:
+            date_filter["$lte"] = datetime.combine(end_date, datetime.max.time())
+            
+        if date_filter:
+            query["date"] = date_filter
+            
+        cursor = self.collection.find(query).sort("date", -1).skip(skip).limit(limit)
+        docs = await cursor.to_list(length=limit)
+        return [Expense(**doc) for doc in docs]
 
     async def get_monthly_summary(
         self, user_id: uuid.UUID, year: int, month: int
     ) -> dict:
-        start_date = date(year, month, 1)
+        start_date = datetime(year, month, 1)
         if month == 12:
-            end_date = date(year + 1, 1, 1)
+            end_date = datetime(year + 1, 1, 1)
         else:
-            end_date = date(year, month + 1, 1)
+            end_date = datetime(year, month + 1, 1)
 
-        # Core spending aggregates with dialect-aware date filtering
-        summary_query = select(
-            func.sum(Expense.amount).label("total"),
-            func.count(Expense.id).label("count")
-        ).where(Expense.user_id == user_id)
-
-        # Apply robust filtering based on dialect
-        if self.db.bind.dialect.name == "sqlite":
-            # SQLite ID comparison can be finicky with UUID objects in aggregates
-            user_id_str = str(user_id)
-            summary_query = summary_query.where(func.cast(Expense.user_id, String) == user_id_str)
+        user_id_str = str(user_id)
+        
+        # Aggregation for summary
+        pipeline = [
+            {
+                "$match": {
+                    "user_id": user_id_str,
+                    "date": {"$gte": start_date, "$lt": end_date}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total": {"$sum": "$amount"},
+                    "count": {"$sum": 1},
+                    "categories": {"$push": {"category": "$category", "amount": "$amount"}}
+                }
+            }
+        ]
+        
+        cursor = self.collection.aggregate(pipeline)
+        result = await cursor.to_list(length=1)
+        
+        if not result:
+            # Check lifetime total even if no monthly data
+            lifetime_cursor = self.collection.aggregate([
+                {"$match": {"user_id": user_id_str}},
+                {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+            ])
+            lifetime_res = await lifetime_cursor.to_list(length=1)
+            lifetime_total = lifetime_res[0]["total"] if lifetime_res else 0
             
-            # Robust date matching
-            month_pattern = f"{year}-{month:02d}%"
-            month_pattern_alt = f"{year}-{month}%"
-            summary_query = summary_query.where(
-                or_(
-                    func.cast(Expense.date, String).like(month_pattern),
-                    func.cast(Expense.date, String).like(month_pattern_alt)
-                )
-            )
-        else:
-            summary_query = summary_query.where(
-                and_(
-                    Expense.user_id == user_id,
-                    Expense.date >= start_date,
-                    Expense.date < end_date
-                )
-            )
-
-        res = await self.db.execute(summary_query)
-        row = res.first()
-        
-        # Calculate lifetime total for absolute transparency
-        lifetime_query = select(func.sum(Expense.amount))
-        if self.db.bind.dialect.name == "sqlite":
-            lifetime_query = lifetime_query.where(func.cast(Expense.user_id, String) == str(user_id))
-        else:
-            lifetime_query = lifetime_query.where(Expense.user_id == user_id)
+            return {
+                "total_amount": 0,
+                "count": 0,
+                "lifetime_total": lifetime_total,
+                "category_breakdown": {}
+            }
             
-        lifetime_res = await self.db.execute(lifetime_query)
-        lifetime_total = lifetime_res.scalar() or 0
-
-        # Category breakdown with matching filtered context
-        cat_query = select(
-            Expense.category,
-            func.sum(Expense.amount).label("total")
-        ).where(Expense.user_id == user_id)
-
-        if self.db.bind.dialect.name == "sqlite":
-            user_id_str = str(user_id)
-            cat_query = cat_query.where(func.cast(Expense.user_id, String) == user_id_str)
+        summary = result[0]
+        
+        # Calculate lifetime total
+        lifetime_cursor = self.collection.aggregate([
+            {"$match": {"user_id": user_id_str}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+        ])
+        lifetime_res = await lifetime_cursor.to_list(length=1)
+        lifetime_total = lifetime_res[0]["total"] if lifetime_res else 0
+        
+        # Calculate category breakdown from the aggregated categories
+        breakdown = {}
+        for entry in summary.get("categories", []):
+            cat = entry["category"]
+            amt = entry["amount"]
+            breakdown[cat] = breakdown.get(cat, 0) + amt
             
-            month_pattern = f"{year}-{month:02d}%"
-            month_pattern_alt = f"{year}-{month}%"
-            cat_query = cat_query.where(
-                or_(
-                    func.cast(Expense.date, String).like(month_pattern),
-                    func.cast(Expense.date, String).like(month_pattern_alt)
-                )
-            )
-        else:
-            cat_query = cat_query.where(
-                and_(
-                    Expense.user_id == user_id,
-                    Expense.date >= start_date,
-                    Expense.date < end_date
-                )
-            )
-        
-        cat_query = cat_query.group_by(Expense.category)
-        
-        cat_res = await self.db.execute(cat_query)
-        breakdown = {cat_row[0]: cat_row[1] for cat_row in cat_res.all()}
-        
         return {
-            "total_amount": row[0] if row and row[0] else 0,
-            "count": row[1] if row and row[1] else 0,
+            "total_amount": summary["total"],
+            "count": summary["count"],
             "lifetime_total": lifetime_total,
             "category_breakdown": breakdown
         }

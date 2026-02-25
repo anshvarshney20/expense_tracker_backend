@@ -1,28 +1,27 @@
 import uuid
 from decimal import Decimal
 from typing import Sequence
-from sqlalchemy.ext.asyncio import AsyncSession
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.exceptions import NotFoundError, ForbiddenError, ValidationError
 from app.models.pot import Pot
 from app.repositories.pot import PotRepository
 from app.schemas.pot import PotCreate, PotUpdate
 
-
 class PotService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncIOMotorDatabase):
         self.pot_repo = PotRepository(db)
 
     async def create_pot(self, user_id: uuid.UUID, pot_in: PotCreate) -> Pot:
         obj_in = pot_in.model_dump()
-        obj_in["user_id"] = user_id
+        obj_in["user_id"] = str(user_id)
         return await self.pot_repo.create(obj_in=obj_in)
 
     async def get_pot(self, pot_id: uuid.UUID, user_id: uuid.UUID) -> Pot:
         pot = await self.pot_repo.get(pot_id)
         if not pot:
             raise NotFoundError(message="Pot not found")
-        if pot.user_id != user_id:
+        if str(pot.user_id) != str(user_id):
             raise ForbiddenError(message="Not authorized to access this pot")
         return pot
 

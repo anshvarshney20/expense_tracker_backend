@@ -1,17 +1,10 @@
 from datetime import datetime, timezone
-from typing import Any
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.sql import func
+from pydantic import BaseModel, Field, ConfigDict
+import uuid
 
+class Base(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class Base(DeclarativeBase):
-    id: Any
-    created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc),
-        server_default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc),
-        server_default=func.now(),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
+    model_config = ConfigDict(from_attributes=True)

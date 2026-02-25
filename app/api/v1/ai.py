@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.api import deps
 from app.models.user import User
@@ -9,10 +9,9 @@ from app.services.expense import ExpenseService
 
 router = APIRouter()
 
-
 @router.post("/analyze", response_model=SuccessResponse[AIAnalysisResponse])
 async def analyze_spending(
-    db: AsyncSession = Depends(deps.get_db),
+    db: AsyncIOMotorDatabase = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
     # Fetch recent expenses for analysis

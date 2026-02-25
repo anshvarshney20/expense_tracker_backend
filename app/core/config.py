@@ -30,7 +30,9 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     # Database
-    DATABASE_URL: str
+    DATABASE_URL: str = ""
+    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_DB_NAME: str = "expense_intelligence"
 
     # Gemini AI
     GEMINI_API_KEY: str = ""

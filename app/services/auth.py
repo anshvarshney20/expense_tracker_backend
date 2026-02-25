@@ -1,6 +1,6 @@
 import uuid
 from datetime import timedelta
-from sqlalchemy.ext.asyncio import AsyncSession
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from jose import JWTError
 
 from app.core import security
@@ -11,9 +11,8 @@ from app.repositories.user import UserRepository
 from app.schemas.user import UserCreate
 from app.schemas.auth import LoginRequest
 
-
 class AuthService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncIOMotorDatabase):
         self.user_repo = UserRepository(db)
 
     async def register(self, user_in: UserCreate) -> User:

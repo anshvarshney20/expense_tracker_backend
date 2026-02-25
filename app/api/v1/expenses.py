@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.api import deps
 from app.models.user import User
@@ -17,17 +17,15 @@ from app.services.expense import ExpenseService
 
 router = APIRouter()
 
-
 @router.post("", response_model=SuccessResponse[ExpenseInDB])
 async def create_expense(
     expense_in: ExpenseCreate,
-    db: AsyncSession = Depends(deps.get_db),
+    db: AsyncIOMotorDatabase = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
     service = ExpenseService(db)
     expense = await service.create_expense(current_user.id, expense_in)
     return SuccessResponse(data=ExpenseInDB.model_validate(expense))
-
 
 @router.get("", response_model=SuccessResponse[list[ExpenseInDB]])
 async def list_expenses(
@@ -36,7 +34,7 @@ async def list_expenses(
     end_date: Optional[date] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
-    db: AsyncSession = Depends(deps.get_db),
+    db: AsyncIOMotorDatabase = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
     service = ExpenseService(db)
@@ -50,46 +48,42 @@ async def list_expenses(
     )
     return SuccessResponse(data=[ExpenseInDB.model_validate(e) for e in expenses])
 
-
 @router.get("/summary", response_model=SuccessResponse[ExpenseSummary])
 async def get_summary(
     year: int = Query(...),
     month: int = Query(..., ge=1, le=12),
-    db: AsyncSession = Depends(deps.get_db),
+    db: AsyncIOMotorDatabase = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
     service = ExpenseService(db)
     summary = await service.get_monthly_summary(current_user.id, year, month)
     return SuccessResponse(data=ExpenseSummary(**summary))
 
-
 @router.get("/{expense_id}", response_model=SuccessResponse[ExpenseInDB])
 async def get_expense(
     expense_id: uuid.UUID,
-    db: AsyncSession = Depends(deps.get_db),
+    db: AsyncIOMotorDatabase = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
     service = ExpenseService(db)
     expense = await service.get_expense(expense_id, current_user.id)
     return SuccessResponse(data=ExpenseInDB.model_validate(expense))
 
-
 @router.patch("/{expense_id}", response_model=SuccessResponse[ExpenseInDB])
 async def update_expense(
     expense_id: uuid.UUID,
     expense_in: ExpenseUpdate,
-    db: AsyncSession = Depends(deps.get_db),
+    db: AsyncIOMotorDatabase = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
     service = ExpenseService(db)
     expense = await service.update_expense(expense_id, current_user.id, expense_in)
     return SuccessResponse(data=ExpenseInDB.model_validate(expense))
 
-
 @router.delete("/{expense_id}", response_model=SuccessResponse[None])
 async def delete_expense(
     expense_id: uuid.UUID,
-    db: AsyncSession = Depends(deps.get_db),
+    db: AsyncIOMotorDatabase = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
     service = ExpenseService(db)

@@ -77,10 +77,14 @@ async def request_validation_exception_handler(request: Request, exc: RequestVal
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled Exception: {str(exc)}", exc_info=True)
+    message = "An unexpected error occurred"
+    if settings.ENVIRONMENT == "development":
+        message = str(exc)
+        
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=ErrorResponse(
-            message="An unexpected error occurred",
+            message=message,
             error={"code": "INTERNAL_SERVER_ERROR"}
         ).model_dump()
     )

@@ -1,23 +1,22 @@
 import uuid
 from datetime import date
 from typing import Sequence
-from sqlalchemy.ext.asyncio import AsyncSession
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.exceptions import NotFoundError, ForbiddenError
 from app.models.expense import Expense
 from app.repositories.expense import ExpenseRepository
 from app.schemas.expense import ExpenseCreate, ExpenseUpdate
 
-
 class ExpenseService:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncIOMotorDatabase):
         self.expense_repo = ExpenseRepository(db)
 
     async def create_expense(
         self, user_id: uuid.UUID, expense_in: ExpenseCreate
     ) -> Expense:
         obj_in = expense_in.model_dump()
-        obj_in["user_id"] = user_id
+        obj_in["user_id"] = str(user_id)
         return await self.expense_repo.create(obj_in=obj_in)
 
     async def get_expense(
@@ -26,7 +25,7 @@ class ExpenseService:
         expense = await self.expense_repo.get(expense_id)
         if not expense:
             raise NotFoundError(message="Expense not found")
-        if expense.user_id != user_id:
+        if str(expense.user_id) != str(user_id):
             raise ForbiddenError(message="Not authorized to access this expense")
         return expense
 

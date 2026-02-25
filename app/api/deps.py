@@ -2,30 +2,17 @@ import uuid
 from typing import AsyncGenerator
 from fastapi import Depends, Request
 from jose import JWTError
-from sqlalchemy.ext.asyncio import AsyncSession
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core import security
 from app.core.config import settings
 from app.core.exceptions import UnauthorizedError
-from app.db.session import AsyncSessionLocal
+from app.db.session import get_db
 from app.models.user import User
 from app.repositories.user import UserRepository
 
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
-
-
 async def get_current_user(
-    request: Request, db: AsyncSession = Depends(get_db)
+    request: Request, db: AsyncIOMotorDatabase = Depends(get_db)
 ) -> User:
     token = request.cookies.get("access_token")
     if not token:
