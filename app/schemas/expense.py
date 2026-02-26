@@ -40,3 +40,9 @@ class ExpenseSummary(BaseModel):
     count: int
     lifetime_total: Decimal = Field(default=Decimal('0.00'))
     category_breakdown: dict[str, Decimal]
+
+class ExpenseList(BaseModel):
+    items: list[ExpenseInDB]
+    total_count: int
+    total_amount: Decimal
+    total_avoidable_amount: Decimal

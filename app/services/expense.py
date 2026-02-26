@@ -33,19 +33,33 @@ class ExpenseService:
         self,
         user_id: uuid.UUID,
         category: str | None = None,
+        avoidable: bool | None = None,
+        search_query: str | None = None,
         start_date: date | None = None,
         end_date: date | None = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> Sequence[Expense]:
-        return await self.expense_repo.get_multi_by_user(
+        sort_by: str = "date",
+        sort_order: int = -1,
+    ) -> dict:
+        expenses, total_count, total_amount, total_avoidable = await self.expense_repo.get_multi_by_user(
             user_id=user_id,
             category=category,
+            avoidable=avoidable,
+            search_query=search_query,
             start_date=start_date,
             end_date=end_date,
             skip=skip,
             limit=limit,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
+        return {
+            "items": expenses,
+            "total_count": total_count,
+            "total_amount": total_amount,
+            "total_avoidable_amount": total_avoidable
+        }
 
     async def update_expense(
         self,

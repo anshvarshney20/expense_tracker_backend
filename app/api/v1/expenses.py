@@ -10,7 +10,8 @@ from app.schemas.expense import (
     ExpenseCreate, 
     ExpenseUpdate, 
     ExpenseInDB, 
-    ExpenseSummary
+    ExpenseSummary,
+    ExpenseList
 )
 from app.schemas.responses import SuccessResponse
 from app.services.expense import ExpenseService
@@ -27,26 +28,34 @@ async def create_expense(
     expense = await service.create_expense(current_user.id, expense_in)
     return SuccessResponse(data=ExpenseInDB.model_validate(expense))
 
-@router.get("", response_model=SuccessResponse[list[ExpenseInDB]])
+@router.get("", response_model=SuccessResponse[ExpenseList])
 async def list_expenses(
     category: Optional[str] = None,
+    avoidable: Optional[bool] = None,
+    search_query: Optional[str] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
+    sort_by: str = Query("date"),
+    sort_order: int = Query(-1, ge=-1, le=1),
     db: AsyncIOMotorDatabase = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
     service = ExpenseService(db)
-    expenses = await service.get_expenses(
+    result = await service.get_expenses(
         user_id=current_user.id,
         category=category,
+        avoidable=avoidable,
+        search_query=search_query,
         start_date=start_date,
         end_date=end_date,
         skip=skip,
         limit=limit,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
-    return SuccessResponse(data=[ExpenseInDB.model_validate(e) for e in expenses])
+    return SuccessResponse(data=ExpenseList.model_validate(result))
 
 @router.get("/summary", response_model=SuccessResponse[ExpenseSummary])
 async def get_summary(

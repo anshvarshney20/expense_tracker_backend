@@ -35,7 +35,9 @@ class BaseRepository(Generic[ModelType]):
         elif isinstance(data, list):
             return [self._prepare_data(v) for v in data]
         elif isinstance(data, (uuid.UUID, date)):
-            if isinstance(data, date) and not isinstance(data, datetime):
+            if isinstance(data, datetime):
+                return data  # Keep as datetime object for MongoDB
+            if isinstance(data, date):
                 return datetime.combine(data, datetime.min.time())
             return str(data)
         elif isinstance(data, Decimal):

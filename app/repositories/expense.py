@@ -14,19 +14,28 @@ class ExpenseRepository(BaseRepository[Expense]):
         *,
         user_id: uuid.UUID,
         category: str | None = None,
+        avoidable: bool | None = None,
+        search_query: str | None = None,
         start_date: date | None = None,
         end_date: date | None = None,
         skip: int = 0,
         limit: int = 100,
-    ) -> Sequence[Expense]:
+        sort_by: str = "date",
+        sort_order: int = -1,
+    ) -> tuple[Sequence[Expense], int, float]:
         query = {"user_id": str(user_id)}
         
         if category:
             query["category"] = category
             
+        if avoidable is not None:
+            query["is_avoidable"] = avoidable
+            
+        if search_query:
+            query["title"] = {"$regex": search_query, "$options": "i"}
+            
         date_filter = {}
         if start_date:
-            # MongoDB handles dates, but pydantic/motor might need conversion
             date_filter["$gte"] = datetime.combine(start_date, datetime.min.time())
         if end_date:
             date_filter["$lte"] = datetime.combine(end_date, datetime.max.time())
@@ -34,9 +43,46 @@ class ExpenseRepository(BaseRepository[Expense]):
         if date_filter:
             query["date"] = date_filter
             
-        cursor = self.collection.find(query).sort("date", -1).skip(skip).limit(limit)
-        docs = await cursor.to_list(length=limit)
-        return [Expense(**doc) for doc in docs]
+        # Use aggregation to get both data and filtered totals in one trip
+        pipeline = [
+            {"$match": query},
+            {
+                "$facet": {
+                    "data": [
+                        {"$sort": {sort_by: sort_order}},
+                        {"$skip": skip},
+                        {"$limit": limit}
+                    ],
+                    "stats": [
+                        {
+                            "$group": {
+                                "_id": None,
+                                "total_count": {"$sum": 1},
+                                "total_amount": {"$sum": "$amount"},
+                                "total_avoidable_amount": {
+                                    "$sum": {
+                                        "$cond": [{"$eq": ["$is_avoidable", True]}, "$amount", 0]
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+        
+        cursor = self.collection.aggregate(pipeline)
+        result = await cursor.to_list(length=1)
+        
+        facet_result = result[0]
+        expenses = [Expense(**doc) for doc in facet_result["data"]]
+        stats = facet_result["stats"][0] if facet_result["stats"] else {
+            "total_count": 0, 
+            "total_amount": 0.0,
+            "total_avoidable_amount": 0.0
+        }
+        
+        return expenses, stats["total_count"], float(stats["total_amount"]), float(stats["total_avoidable_amount"])
 
     async def get_monthly_summary(
         self, user_id: uuid.UUID, year: int, month: int
